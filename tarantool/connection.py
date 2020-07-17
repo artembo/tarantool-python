@@ -11,6 +11,7 @@ import socket
 
 import ctypes
 import ctypes.util
+
 try:
     from ctypes import c_ssize_t
 except ImportError:
@@ -55,6 +56,12 @@ from tarantool.error import (
     InterfaceError,
     SchemaError,
     NetworkWarning,
+    OperationalError,
+    DataError,
+    IntegrityError,
+    InternalError,
+    ProgrammingError,
+    NotSupportedError,
     SchemaReloadException,
     warn
 )
@@ -77,11 +84,20 @@ class Connection(object):
     Also this class provides low-level interface to data manipulation
     (insert/delete/update/select).
     '''
+    # DBAPI Extension: supply exceptions as attributes on the connection
     Error = tarantool.error
     DatabaseError = DatabaseError
     InterfaceError = InterfaceError
     SchemaError = SchemaError
     NetworkError = NetworkError
+    Warning = Warning
+    DataError = DataError
+    OperationalError = OperationalError
+    IntegrityError = IntegrityError
+    InternalError = InternalError
+    ProgrammingError = ProgrammingError
+    NotSupportedError = NotSupportedError
+    ImproperlyConfigured = Exception
 
     def __init__(self, host, port,
                  user=None,
@@ -293,12 +309,11 @@ class Connection(object):
                 retbytes = self._sys_recv(sock_fd, buf, 1, flag)
 
                 err = 0
-                if os.name!= 'nt':
+                if os.name != 'nt':
                     err = ctypes.get_errno()
                 else:
                     err = ctypes.get_last_error()
                     self._socket.setblocking(True)
-
 
                 WWSAEWOULDBLOCK = 10035
                 if (retbytes < 0) and (err == errno.EAGAIN or
@@ -791,10 +806,10 @@ class Connection(object):
         '''
         Execute SQL request.
         Execute SQL query in database. 
-        
-        :param query: SQL syntax query 
+
+        :param query: SQL syntax query
         :type query: str
-        
+
         :param params: Bind values to use in query
         :type params: list, dict
 
