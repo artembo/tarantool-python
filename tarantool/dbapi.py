@@ -6,7 +6,7 @@ import re
 from tarantool.error import InterfaceError
 from .connection import Connection as BaseConnection
 
-update_insert_pattern = re.compile(r'^UPDATE|INSERT')
+update_insert_pattern = re.compile(r'^UPDATE|^INSERT', re.IGNORECASE)
 
 
 class Cursor:
@@ -14,12 +14,13 @@ class Cursor:
     _rowcount = 0
     description = None
     position = 0
-    arraysize = 200
+    arraysize = 1
     autocommit = True
+    closed = False
 
     def __init__(self, connection):
         self._c = connection
-        self.rows = []
+        self.rows = None
 
     def callproc(self, procname, *params):  # TODO
         """
@@ -48,6 +49,8 @@ class Cursor:
             return "NULL"
         if isinstance(p, bool):
             return str(p)
+        if isinstance(p, str):
+            return "'%s'" % p.replace("'", "''")
         return "'%s'" % p
 
     @staticmethod
@@ -85,6 +88,8 @@ class Cursor:
 
         Return values are not defined.
         """
+        if self.closed:
+            raise self._c.ProgrammingError
         if params:
             query = query % tuple(
                 self._convert_param(param) for param in params)
@@ -92,22 +97,28 @@ class Cursor:
         response = self._c.execute(query)
 
         self.rows = tuple(response.body.values())[1] if len(
-            response.body) > 1 else []
+            response.body) > 1 else None
 
-        if update_insert_pattern.match(query.upper()):
+        if update_insert_pattern.match(query):
             try:
                 self._rowcount = response.rowcount
             except InterfaceError:
-                self._rowcount = 1
+                self._rowcount = -1
         else:
-            self._rowcount = 1
+            self._rowcount = -1
 
         if query.upper().startswith('INSERT'):
             self._lastrowid = self._extract_last_row_id(response.body)
         return response
 
-    def executemany(self, query, params):
-        return self.execute(query, params)
+    def executemany(self, query, param_sets):
+        rowcounts = []
+        for params in param_sets:
+            self.execute(query, params)
+            rowcounts.append(self.rowcount)
+
+        self._rowcount = -1 if -1 in rowcounts else sum(rowcounts)
+        return self
 
     @property
     def lastrowid(self):
@@ -150,10 +161,11 @@ class Cursor:
         An Error (or subclass) exception is raised if the previous call to
         .execute*() did not produce any result set or no call was issued yet.
         """
-
+        if self.rows is None:
+            raise self._c.Error
         return self.fetchmany(1)[0] if len(self.rows) else None
 
-    def fetchmany(self, size):
+    def fetchmany(self, size=None):
         """
         Fetch the next set of rows of a query result, returning a sequence of
         sequences (e.g. a list of tuples). An empty sequence is returned when
@@ -174,6 +186,11 @@ class Cursor:
         .arraysize attribute. If the size parameter is used, then it is best
         for it to retain the same value from one .fetchmany() call to the next.
         """
+        size = size or self.arraysize
+
+        if self.rows is None:
+            raise self._c.ProgrammingError
+
         if len(self.rows) < size:
             items = self.rows
             self.rows = []
@@ -190,6 +207,9 @@ class Cursor:
         An Error (or subclass) exception is raised if the previous call to
         .execute*() did not produce any result set or no call was issued yet.
         """
+        if self.rows is None:
+            raise self._c.ProgrammingError
+
         items = self.rows[:]
         self.rows = []
         return items
@@ -216,10 +236,17 @@ class Cursor:
 
 class Connection(BaseConnection):
     _cursor = None
+    paramstyle = 'format'
+    apilevel = "2.0"
+    threadsafety = 0
 
     server_version = 2
 
-    def commit(self):  # TODO
+    def connect(self):
+        super().connect()
+        return self
+
+    def commit(self):
         """
         Commit any pending transaction to the database.
 
@@ -230,6 +257,8 @@ class Connection(BaseConnection):
         Database modules that do not support transactions should implement
         this method with void functionality.
         """
+        if self._socket is None:
+            raise self.ProgrammingError
 
     def rollback(self):
         """
@@ -238,6 +267,13 @@ class Connection(BaseConnection):
         Closing a connection without committing the changes first will cause
         an implicit rollback to be performed.
         """
+        if self._socket is None:
+            raise self.ProgrammingError
+
+    def execute(self, query, params=None):
+        if self._socket is None:
+            raise self.ProgrammingError
+        return super().execute(query, params)
 
     def close(self):
         """
@@ -252,6 +288,8 @@ class Connection(BaseConnection):
         if self._socket:
             self._socket.close()
             self._socket = None
+        else:
+            raise self.ProgrammingError
 
     def _set_cursor(self):
         self._cursor = Cursor(self)

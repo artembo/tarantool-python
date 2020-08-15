@@ -51,6 +51,7 @@ from tarantool.const import (
     ITERATOR_ALL
 )
 from tarantool.error import (
+    Error,
     NetworkError,
     DatabaseError,
     InterfaceError,
@@ -85,7 +86,7 @@ class Connection(object):
     (insert/delete/update/select).
     '''
     # DBAPI Extension: supply exceptions as attributes on the connection
-    Error = tarantool.error
+    Error = Error
     DatabaseError = DatabaseError
     InterfaceError = InterfaceError
     SchemaError = SchemaError
@@ -108,6 +109,7 @@ class Connection(object):
                  connect_now=True,
                  encoding=ENCODING_DEFAULT,
                  call_16=False,
+                 use_list=True,
                  connection_timeout=CONNECTION_TIMEOUT):
         '''
         Initialize a connection to the server.
@@ -140,6 +142,7 @@ class Connection(object):
         self._socket = None
         self.connected = False
         self.error = True
+        self.use_list = use_list
         self.encoding = encoding
         self.call_16 = call_16
         self.connection_timeout = connection_timeout
@@ -277,7 +280,7 @@ class Connection(object):
         while True:
             try:
                 self._socket.sendall(bytes(request))
-                response = Response(self, self._read_response())
+                response = Response(self, self._read_response(), self.use_list)
                 break
             except SchemaReloadException as e:
                 self.update_schema(e.schema_version)
@@ -461,7 +464,7 @@ class Connection(object):
         self._socket.sendall(bytes(request))
 
         while True:
-            resp = Response(self, self._read_response())
+            resp = Response(self, self._read_response(), self.use_list)
             yield resp
             if resp.code == REQUEST_TYPE_OK or resp.code >= REQUEST_TYPE_ERROR:
                 return
@@ -475,7 +478,7 @@ class Connection(object):
         self._socket.sendall(bytes(request))
         state = JoinState.Handshake
         while True:
-            resp = Response(self, self._read_response())
+            resp = Response(self, self._read_response(), self.use_list)
             yield resp
             if resp.code >= REQUEST_TYPE_ERROR:
                 return
@@ -504,7 +507,7 @@ class Connection(object):
         request = RequestSubscribe(self, cluster_uuid, server_uuid, vclock)
         self._socket.sendall(bytes(request))
         while True:
-            resp = Response(self, self._read_response())
+            resp = Response(self, self._read_response(), self.use_list)
             yield resp
             if resp.code >= REQUEST_TYPE_ERROR:
                 return
