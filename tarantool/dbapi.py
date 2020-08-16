@@ -103,7 +103,7 @@ class Cursor:
             try:
                 self._rowcount = response.rowcount
             except InterfaceError:
-                self._rowcount = -1
+                self._rowcount = 1
         else:
             self._rowcount = -1
 

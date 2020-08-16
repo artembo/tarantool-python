@@ -25,12 +25,15 @@ class TestSuite_DBAPI(DatabaseAPI20Test):
 
     def setUp(self):
         self.srv = TarantoolServer()
-        self.srv.script = 'unit/suites/box_dbapi.lua'
+        self.srv.script = 'unit/suites/box.lua'
         self.srv.start()
         self.driver = Connection(self.srv.host, self.srv.args['primary'])
         # prevent a remote tarantool from clean our session
         if self.srv.is_started():
             self.srv.touch_lock()
+        # grant full access to guest
+        self.srv.admin("box.schema.user.grant('guest', 'create,read,write,"
+                       "execute', 'universe')")
 
     def tearDown(self):
         # self.driver.close()
