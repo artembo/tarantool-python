@@ -97,8 +97,7 @@ class Cursor:
                 self._convert_param(param) for param in params)
 
         response = self._c.execute(query)
-
-        self.rows = tuple(response.body.values())[1] if len(
+        self.rows = tuple(response.data) if len(
             response.body) > 1 else None
 
         if update_insert_pattern.match(query):
