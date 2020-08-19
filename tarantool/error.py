@@ -49,6 +49,30 @@ class ConfigurationError(Error):
     '''
 
 
+class InternalError(DatabaseError):
+    pass
+
+
+class OperationalError(DatabaseError):
+    pass
+
+
+class ProgrammingError(DatabaseError):
+    pass
+
+
+class IntegrityError(DatabaseError):
+    pass
+
+
+class DataError(DatabaseError):
+    pass
+
+
+class NotSupportedError(DatabaseError):
+    pass
+
+
 # Monkey patch os.strerror for win32
 if sys.platform == "win32":
     # Windows Sockets Error Codes (not all, but related on network errors)

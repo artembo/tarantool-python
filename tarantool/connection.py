@@ -11,6 +11,7 @@ import socket
 
 import ctypes
 import ctypes.util
+
 try:
     from ctypes import c_ssize_t
 except ImportError:
@@ -34,7 +35,8 @@ from tarantool.request import (
     RequestSubscribe,
     RequestUpdate,
     RequestUpsert,
-    RequestAuthenticate
+    RequestAuthenticate,
+    RequestExecute
 )
 from tarantool.space import Space
 from tarantool.const import (
@@ -49,11 +51,18 @@ from tarantool.const import (
     ITERATOR_ALL
 )
 from tarantool.error import (
+    Error,
     NetworkError,
     DatabaseError,
     InterfaceError,
     SchemaError,
     NetworkWarning,
+    OperationalError,
+    DataError,
+    IntegrityError,
+    InternalError,
+    ProgrammingError,
+    NotSupportedError,
     SchemaReloadException,
     warn
 )
@@ -76,11 +85,20 @@ class Connection(object):
     Also this class provides low-level interface to data manipulation
     (insert/delete/update/select).
     '''
-    Error = tarantool.error
+    # DBAPI Extension: supply exceptions as attributes on the connection
+    Error = Error
     DatabaseError = DatabaseError
     InterfaceError = InterfaceError
     SchemaError = SchemaError
     NetworkError = NetworkError
+    Warning = Warning
+    DataError = DataError
+    OperationalError = OperationalError
+    IntegrityError = IntegrityError
+    InternalError = InternalError
+    ProgrammingError = ProgrammingError
+    NotSupportedError = NotSupportedError
+    ImproperlyConfigured = Exception
 
     def __init__(self, host, port,
                  user=None,
@@ -91,6 +109,7 @@ class Connection(object):
                  connect_now=True,
                  encoding=ENCODING_DEFAULT,
                  call_16=False,
+                 use_list=True,
                  connection_timeout=CONNECTION_TIMEOUT):
         '''
         Initialize a connection to the server.
@@ -123,6 +142,7 @@ class Connection(object):
         self._socket = None
         self.connected = False
         self.error = True
+        self.use_list = use_list
         self.encoding = encoding
         self.call_16 = call_16
         self.connection_timeout = connection_timeout
@@ -260,7 +280,7 @@ class Connection(object):
         while True:
             try:
                 self._socket.sendall(bytes(request))
-                response = Response(self, self._read_response())
+                response = Response(self, self._read_response(), self.use_list)
                 break
             except SchemaReloadException as e:
                 self.update_schema(e.schema_version)
@@ -292,12 +312,11 @@ class Connection(object):
                 retbytes = self._sys_recv(sock_fd, buf, 1, flag)
 
                 err = 0
-                if os.name!= 'nt':
+                if os.name != 'nt':
                     err = ctypes.get_errno()
                 else:
                     err = ctypes.get_last_error()
                     self._socket.setblocking(True)
-
 
                 WWSAEWOULDBLOCK = 10035
                 if (retbytes < 0) and (err == errno.EAGAIN or
@@ -445,7 +464,7 @@ class Connection(object):
         self._socket.sendall(bytes(request))
 
         while True:
-            resp = Response(self, self._read_response())
+            resp = Response(self, self._read_response(), self.use_list)
             yield resp
             if resp.code == REQUEST_TYPE_OK or resp.code >= REQUEST_TYPE_ERROR:
                 return
@@ -459,7 +478,7 @@ class Connection(object):
         self._socket.sendall(bytes(request))
         state = JoinState.Handshake
         while True:
-            resp = Response(self, self._read_response())
+            resp = Response(self, self._read_response(), self.use_list)
             yield resp
             if resp.code >= REQUEST_TYPE_ERROR:
                 return
@@ -488,7 +507,7 @@ class Connection(object):
         request = RequestSubscribe(self, cluster_uuid, server_uuid, vclock)
         self._socket.sendall(bytes(request))
         while True:
-            resp = Response(self, self._read_response())
+            resp = Response(self, self._read_response(), self.use_list)
             yield resp
             if resp.code >= REQUEST_TYPE_ERROR:
                 return
@@ -785,3 +804,23 @@ class Connection(object):
         Need override for async io connection
         '''
         return 0
+
+    def execute(self, query, params=None):
+        '''
+        Execute SQL request.
+        Execute SQL query in database. 
+
+        :param query: SQL syntax query
+        :type query: str
+
+        :param params: Bind values to use in query
+        :type params: list, dict
+
+        :return: query result data 
+        :rtype: list
+        '''
+        if not params:
+            params = []
+        request = RequestExecute(self, query, params)
+        response = self._send_request(request)
+        return response

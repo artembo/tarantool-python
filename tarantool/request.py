@@ -7,7 +7,6 @@ Request types definitions
 import msgpack
 import hashlib
 
-
 from tarantool.const import (
     IPROTO_CODE,
     IPROTO_SYNC,
@@ -27,6 +26,8 @@ from tarantool.const import (
     IPROTO_OPS,
     # IPROTO_INDEX_BASE,
     IPROTO_SCHEMA_ID,
+    IPROTO_SQL_TEXT,
+    IPROTO_SQL_BIND,
     REQUEST_TYPE_OK,
     REQUEST_TYPE_PING,
     REQUEST_TYPE_SELECT,
@@ -37,6 +38,7 @@ from tarantool.const import (
     REQUEST_TYPE_UPSERT,
     REQUEST_TYPE_CALL16,
     REQUEST_TYPE_CALL,
+    REQUEST_TYPE_EXECUTE,
     REQUEST_TYPE_EVAL,
     REQUEST_TYPE_AUTHENTICATE,
     REQUEST_TYPE_JOIN,
@@ -46,6 +48,7 @@ from tarantool.utils import (
     strxor,
     binary_types
 )
+
 
 class Request(object):
     '''
@@ -134,6 +137,16 @@ class RequestAuthenticate(Request):
         request_body = msgpack.dumps({IPROTO_USER_NAME: user,
                                       IPROTO_TUPLE: ("chap-sha1", scramble)})
         self._body = request_body
+
+    def header(self, length):
+        self._sync = self.conn.generate_sync()
+        # Set IPROTO_SCHEMA_ID: 0 to avoid SchemaReloadException
+        # It is ok to use 0 in auth every time
+        header = msgpack.dumps({IPROTO_CODE: self.request_type,
+                                IPROTO_SYNC: self._sync,
+                                IPROTO_SCHEMA_ID: 0})
+
+        return msgpack.dumps(length + len(header)) + header
 
     def header(self, length):
         self._sync = self.conn.generate_sync()
@@ -331,4 +344,20 @@ class RequestOK(Request):
         super(RequestOK, self).__init__(conn)
         request_body = msgpack.dumps({IPROTO_CODE: self.request_type,
                                       IPROTO_SYNC: sync})
+        self._body = request_body
+
+
+class RequestExecute(Request):
+    '''
+    Represents EXECUTE request
+    '''
+    request_type = REQUEST_TYPE_EXECUTE
+
+    # pylint: disable=W0231
+    def __init__(self, conn, sql, args):
+        super(RequestExecute, self).__init__(conn)
+
+        request_body = msgpack.dumps({IPROTO_SQL_TEXT: sql,
+                                      IPROTO_SQL_BIND: args})
+
         self._body = request_body
