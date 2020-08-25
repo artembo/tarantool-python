@@ -13,7 +13,7 @@ class TestSuite_Execute(unittest.TestCase):
     ddl = 'create table %s (id INTEGER PRIMARY KEY AUTOINCREMENT, ' \
            'name varchar(20))'
 
-    ddl_params = [
+    dml_params = [
         {'id': None, 'name': 'Michael'},
         {'id': None, 'name': 'Mary'},
         {'id': None, 'name': 'John'},
@@ -48,7 +48,7 @@ class TestSuite_Execute(unittest.TestCase):
 
     def _populate_data(self, table_name):
         query = "insert into %s values (:id, :name)" % table_name
-        for param in self.ddl_params:
+        for param in self.dml_params:
             self.con.execute(query, param)
 
     def _create_table(self, table_name):
@@ -63,7 +63,7 @@ class TestSuite_Execute(unittest.TestCase):
 
         query = "insert into %s values (:id, :name)" % table_name
 
-        for num, param in enumerate(self.ddl_params, start=1):
+        for num, param in enumerate(self.dml_params, start=1):
             response = self.con.execute(query, param)
             self.assertEqual(response.autoincrement_ids[0], num)
             self.assertEqual(response.affected_row_count, 1)
